@@ -1,0 +1,8 @@
+{
+  "name": "web-x",
+  "version": "1.0.0",
+  "description": "Unified web content extraction — static pages, video transcripts, and JS-rendered deep crawls",
+  "author": { "name": "Rugved Ambekar" },
+  "license": "MIT",
+  "keywords": ["web", "scraping", "extraction", "trafilatura", "yt-dlp", "crawl4ai", "transcript", "markdown"]
+}

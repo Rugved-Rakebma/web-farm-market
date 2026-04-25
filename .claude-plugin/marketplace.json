@@ -1,0 +1,13 @@
+{
+  "name": "web-farm-market",
+  "owner": {
+    "name": "Rugved Ambekar"
+  },
+  "plugins": [
+    {
+      "name": "web-extract",
+      "source": "./web-extract/",
+      "description": "Unified web content extraction — pages, transcripts, and deep crawls via trafilatura, yt-dlp, and crawl4ai"
+    }
+  ]
+}
