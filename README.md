@@ -82,19 +82,6 @@ URL provided
 
 ---
 
-## Just Recipes
-
-The plugin's commands call `just` recipes, which call the backends. You can use them directly too:
-
-```bash
-just web-fetch "https://example.com"              # trafilatura
-just web-fetch "https://example.com" --js          # crawl4ai
-just web-transcript "https://youtube.com/watch?v=" # yt-dlp
-just web-crawl "https://docs.example.com" 10       # crawl4ai BFS, 10 pages
-```
-
----
-
 ## Prerequisites
 
 The plugin orchestrates three CLI tools. Install them before use:
@@ -106,7 +93,7 @@ uv tool install crawl4ai
 crawl4ai-setup
 ```
 
-If a backend is missing, recipes print the exact install command:
+If a backend is missing, commands print the exact install command:
 
 ```
 Error: trafilatura not found. Install with: uv tool install trafilatura
