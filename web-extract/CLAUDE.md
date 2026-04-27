@@ -2,7 +2,7 @@
 
 ## Architecture
 
-Unified web content extraction plugin with three backends. No custom code — the plugin orchestrates existing CLI tools via `just` recipes.
+Unified web content extraction plugin with three backends. Python scripts in `scripts/` orchestrate the CLI tools. Commands reference scripts via `${CLAUDE_PLUGIN_ROOT}/scripts/`.
 
 Two layers:
 
@@ -13,10 +13,24 @@ Two layers:
 
 ```
 commands/           # /web-x:fetch, /web-x:transcript, /web-x:crawl
+scripts/            # Python orchestration (stdlib only)
+  web-fetch.py      # trafilatura → crawl4ai fallback
+  web-transcript.py # yt-dlp metadata + subtitle download + VTT parsing
+  web-crawl.py      # crawl4ai BFS deep crawl
 skills/
   web/              # Routing decision tree + backend documentation
     SKILL.md
 ```
+
+## Scripts
+
+All scripts use Python 3.9+ stdlib only (no pip dependencies). They call CLI tools via subprocess.
+
+| Script | Backend(s) | What It Orchestrates |
+|--------|-----------|---------------------|
+| `web-fetch.py` | trafilatura, crawl4ai | Try trafilatura → auto-escalate to crawl4ai if thin result |
+| `web-transcript.py` | yt-dlp | Metadata extraction + subtitle download (auto → manual fallback) + VTT-to-plaintext |
+| `web-crawl.py` | crawl4ai | BFS deep crawl with page cap validation |
 
 ## Backends (prerequisites)
 
@@ -26,15 +40,13 @@ skills/
 | `yt-dlp` | `uv tool install yt-dlp` | Video transcript + metadata |
 | `crawl4ai` | `uv tool install crawl4ai && crawl4ai-setup` | JS-rendered pages + deep crawl |
 
-All three are installed as standalone CLI tools via `uv tool install`. They are prerequisites — the plugin's `just` recipes call them directly.
+All three are installed as standalone CLI tools via `uv tool install`. They are prerequisites — the plugin's scripts call them via subprocess.
 
-## Just Recipes
+## Testing
 
-| Recipe | Backend |
-|--------|---------|
-| `just web-fetch <url>` | trafilatura |
-| `just web-fetch <url> --js` | crawl4ai |
-| `just web-transcript <url>` | yt-dlp |
-| `just web-crawl <url> [depth]` | crawl4ai |
-
-Recipes are defined in `~/justfile` under the `[web]` group.
+```bash
+# From the plugin root
+python3 scripts/web-fetch.py "https://paulgraham.com/greatwork.html"
+python3 scripts/web-transcript.py "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+python3 scripts/web-crawl.py "https://docs.example.com" 5
+```

@@ -9,9 +9,9 @@ Crawl site: **$ARGUMENTS**
 
 1. **Parse arguments.** Extract URL and optional max_pages from `$ARGUMENTS`. Default: 10 pages. Cap at 50 if user requests more.
 
-2. **Run the crawl:**
+2. **Run the crawl script:**
    ```bash
-   just web-crawl "<url>" <max_pages>
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/web-crawl.py "<url>" <max_pages>
    ```
 
 3. **Present results** to the user:

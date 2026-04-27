@@ -11,22 +11,13 @@ Extract content from: **$ARGUMENTS**
 
 2. **Check if this is a video URL.** If the URL matches a video platform (youtube.com, vimeo.com, tiktok.com, etc.), suggest `/web-x:transcript` instead and confirm with the user before proceeding.
 
-3. **Run trafilatura first** (fast, no browser):
+3. **Run the fetch script:**
    ```bash
-   just web-fetch "$ARGUMENTS"
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/web-fetch.py "$ARGUMENTS"
    ```
+   The script tries trafilatura first (fast, no browser). If the result is thin (<200 chars), it auto-escalates to crawl4ai (headless Chromium). Use `--js` flag to skip straight to crawl4ai.
 
-4. **Evaluate the result:**
-   - If output is substantial (>200 chars of meaningful content), present the markdown to the user with any metadata (title, author, date) shown at the top.
-   - If output is empty or very thin (<200 chars), the page likely requires JavaScript rendering.
-
-5. **Escalate to crawl4ai if needed:**
-   ```bash
-   just web-fetch "$ARGUMENTS" --js
-   ```
-   Tell the user you're escalating because the page appears to require JavaScript rendering.
-
-6. **Present the result** as clean markdown. Preserve all formatting, links, and structure.
+4. **Present the result** as clean markdown. Preserve all formatting, links, and structure.
 
 ## Notes
 

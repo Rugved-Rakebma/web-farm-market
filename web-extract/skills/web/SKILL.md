@@ -14,19 +14,18 @@ URL provided
 ├── Video platform? (youtube.com, youtu.be, vimeo.com, twitter.com/*/video,
 │   tiktok.com, twitch.tv, soundcloud.com, dailymotion.com, etc.)
 │   └── yt-dlp → transcript + metadata
-│       Recipe: just web-transcript <url>
+│       python3 ${CLAUDE_PLUGIN_ROOT}/scripts/web-transcript.py <url>
 │
 ├── Single web page?
 │   ├── Try trafilatura first (fast, no browser needed)
-│   │   Recipe: just web-fetch <url>
-│   ├── Result empty/thin? Likely JS-rendered (SPA, React, Angular, dashboard)
-│   │   └── Escalate to crawl4ai
-│   │       Recipe: just web-fetch <url> --js
-│   └── Result good? → done
+│   │   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/web-fetch.py <url>
+│   ├── Result empty/thin? Script auto-escalates to crawl4ai
+│   └── Force JS rendering?
+│       python3 ${CLAUDE_PLUGIN_ROOT}/scripts/web-fetch.py <url> --js
 │
 └── Multi-page site / deep crawl needed?
     └── crawl4ai deep crawl
-        Recipe: just web-crawl <url> [depth]
+        python3 ${CLAUDE_PLUGIN_ROOT}/scripts/web-crawl.py <url> [max_pages]
 ```
 
 ## Backends
@@ -37,23 +36,20 @@ URL provided
 - **Extracts**: Article text, title, author, date, tags, categories, comments
 - **Output**: Clean markdown with formatting preserved
 - **Limitations**: Cannot render JavaScript — misses SPAs and dynamic content
-- **Recipe**: `just web-fetch <url>`
 
 ### yt-dlp (video platforms)
 
 - **Coverage**: Thousands of sites (YouTube, Vimeo, Twitter/X, TikTok, Twitch, Dailymotion, SoundCloud, and many more)
 - **Extracts**: Transcript/subtitles (auto-generated + manual), title, author/channel, duration, description, view count, upload date
-- **Output**: Metadata JSON + plain text transcript
+- **Output**: Metadata + plain text transcript
 - **Limitations**: Requires subtitles to exist (auto-generated or manual). Cannot transcribe audio.
-- **Recipe**: `just web-transcript <url>`
 
 ### crawl4ai (JS-rendered / deep crawl)
 
-- **Engine**: Headless Chromium via Playwright (already installed on this system)
+- **Engine**: Headless Chromium via Playwright
 - **Renders**: JavaScript before extraction — handles SPAs, React, Angular, dynamic content
-- **Deep crawl**: BFS multi-page crawl with configurable depth
+- **Deep crawl**: BFS multi-page crawl with configurable page limit
 - **Speed**: Slower (~3-5s per page due to browser rendering)
-- **Recipe**: `just web-fetch <url> --js` (single page) or `just web-crawl <url> [depth]` (multi-page)
 
 ## Overlap with existing tools
 
@@ -67,7 +63,7 @@ URL provided
 
 ## Error handling
 
-If a backend is not installed, recipes print a clear error with the install command:
+If a backend CLI is not installed, scripts print a clear error with the install command to stderr:
 
 ```
 Error: trafilatura not found. Install with: uv tool install trafilatura
