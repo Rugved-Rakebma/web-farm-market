@@ -7,7 +7,9 @@ Unified web content extraction plugin with three backends. Python scripts in `sc
 Two layers:
 
 1. **Commands** (`/web-x:*`) — User-invocable workflows in `commands/`. Plugin name `"web-x"` creates the `/web-x:` prefix.
-2. **Skills** — In `skills/web/SKILL.md`. Decision tree teaching Claude when to use each backend.
+2. **Skills** — Two skills under `skills/`:
+   - `web/SKILL.md` — routing decision tree teaching Claude when to use each backend.
+   - `output/SKILL.md` — output format contract: standardized YAML frontmatter, filename slug rules, per-type body conventions for Obsidian-friendly `.md` files.
 
 ## Plugin Structure
 
@@ -19,6 +21,8 @@ scripts/            # Python orchestration (stdlib only)
   web-crawl.py      # crawl4ai BFS deep crawl
 skills/
   web/              # Routing decision tree + backend documentation
+    SKILL.md
+  output/           # File-shape contract for materializing extractions as .md
     SKILL.md
 ```
 
