@@ -174,6 +174,28 @@ Longer human-readable overview: history, examples, anything authored.
 - **`create` does NOT pre-impose subdirs** (`source/`, `reviews/`, etc.). Those are vault-specific decisions made when the vault is designed.
 - **`create` does NOT programmatically register the vault with Obsidian's `obsidian.json`** — user opens once in Obsidian to register. Avoids brittleness.
 
+### 2026-07-02 (research command — deep-research integration)
+
+- **New command `/vault-x:research "<question>"`.** Fifth command in `vault-x`. Turns research into persistent, wiki-linked vault knowledge instead of a throwaway report. Extends this plugin — **no separate `search-x` plugin.**
+- **Reuse the native `deep-research` workflow; don't rebuild it.** Anthropic ships it bundled in the CLI binary, invoked via `Workflow({name:"deep-research", args})`. We inherit its fan-out search / adversarial verification / cited synthesis — and its future improvements — for free. Verified from the binary: it **returns structured JSON** (`{question, summary, findings[], caveats, openQuestions[], sources:[{url, quality, angle, claimCount}], stats}`) to the caller, which is what makes the wrap possible.
+- **`web-x` role = enrich the sources deep-research skimmed.** Its Fetch phase uses shallow `WebFetch`; video/JS/paywalled sources come back `claimCount == 0` but stay listed in `sources[]`. The command deep-reads exactly those URLs via `web-x:web`. **v1 trigger: `claimCount == 0` only** (no host allowlist). web-x does NOT nest inside deep-research — enrichment is strictly post-hoc.
+- **Main-loop only.** `Workflow` is unavailable inside subagents, so `research` must run at top level and never be delegated. Dictates the form: a command orchestration recipe (`commands/research.md`) + a deterministic writer script (`scripts/research-scaffold.py`). No LLM in the file-writing step.
+- **`research-vault` = standardized federation member.** Auto-created at `~/knowledge-vaults/research-vault/` on first run, from dedicated templates. Shows in `list`, maps via `view`. Each run is a dated folder `YYYY-MM-DD-<slug>/` with `report.md` / `blueprint.md` / `sources.md` / `raw/`. Hermetic wiki-links within a run. It's a **lab notebook**, not curated knowledge.
+- **`blueprint.md` reconstructs angle *labels* only.** The harness returns angle labels per source (`sources[].angle`) but not the exact queries — acceptable for v1.
+- **Intra-run links use bare wiki-links; single-run graph is clean.** `report.md → [[sources]], [[blueprint]]`; `sources.md → [[<host>]]` for each web-x-enriched raw note (bare stem so both `vault-view` and Obsidian resolve it — no aliased pipe inside table cells). **Known v1 limitation:** `vault-view` resolves links by basename, so across *multiple* runs the repeated `report`/`sources`/`blueprint` stems collide (run B's `[[sources]]` resolves to run A's). Single-run views are correct — the dominant early case. Revisit (path-qualified links or per-run stems) if multi-run archives make the collision bite.
+- **Ephemeral research stays served by calling `deep-research` directly.** No vault machinery when you don't want a vault. Clean product boundary.
+- **Explicitly deferred:** promotion/distillation of findings into topic vaults (manual for now), cross-run dedup, any index/search, host-allowlist enrichment triggers, an auto-triggering `skills/research/SKILL.md` (command-only for v1).
+
+### 2026-07-03 (research namespace + always-prompt routing)
+
+- **Per-topic research vaults under a `research/` namespace.** The flat single `research-vault/` (all runs, any subject) was wrong. New model: `~/knowledge-vaults/research/<topic-slug>/` — one topic vault per subject, each accumulating dated run folders `YYYY-MM-DD-<query-slug>/`. `research/` is a plain namespace directory, not a vault.
+- **Two slugs, separated.** The *topic* names the vault (short clean slug, e.g. `local-llms`, **no `-vault` suffix** — the namespace already says what it is); the *query* names the dated run folder (`--title` → slug). `research-scaffold.py` gained `--vault-slug` / `--vault-title` / `--vault-purpose`, dropped `--topic`.
+- **Always-confirm routing.** A run costs ~2M tokens / ~10 min, so `/vault-x:research` **always** asks (`AskUserQuestion`, recommendation pre-selected) which topic vault to target — existing match or a new clean slug — *before* running the harness. Never silent-route.
+- **Topic granularity defaults broad.** Fold related queries into one topic vault; the prompt catches genuine ambiguity.
+- **Path-based vault identity.** A vault = any dir containing `overview.md`, named by its path relative to the root. `vault-list` discovers recursively; `vault-view` resolves by relative path → legacy `<name>-vault` → unique leaf. Legacy flat vaults keep working; run folders (no `overview.md`) are never mistaken for vaults.
+- **Folder-relative link resolution.** `vault-view` now prefers a same-directory target when resolving `[[stem]]`, so each dated run's `[[sources]]`/`[[blueprint]]` links resolve within its own run folder even when a topic vault holds many runs with repeated stems. **Supersedes the cross-run basename-collision limitation** logged 2026-07-02.
+- **Migration:** the one existing run moved from `research-vault/` → `research/local-llms/` (fresh topic overview; run folder + its 2026-07-02 date preserved).
+
 ---
 
 ## Resolved tensions
@@ -194,6 +216,12 @@ Longer human-readable overview: history, examples, anything authored.
 1. **`CLAUDE.md` template content** — concrete sections, examples, verbosity for both the federation-root and per-vault flavors.
 2. **`overview.md` template** — final frontmatter field list (current proposal is provisional).
 3. **`list` filter on `status`.** Hide `dormant`/`archived` by default? Show all? Flag-controlled?
+
+### Post-first-run fixes — APPLIED 2026-07-03
+> From the first live `/vault-x:research` run (2026-07-02); batched and applied together. See `deep-research-harness.md` for run context.
+1. **Synthesis-robustness (important).** ✅ `commands/research.md` step 3 now detects a degenerate native synthesis (placeholder summary / findings count far below `stats.confirmed`) and reconstructs the report from the `## Confirmed claims` block in the synthesize agent's transcript. (On the 2026-07-02 run this recovery was done by hand.)
+2. **Title length (polish).** ✅ `research-scaffold.py` gained a `--title` arg (short label) for the frontmatter `title` of report/blueprint/sources; the full question stays in the `question` field + body H1. Falls back to a truncated `--topic` via `short_title()`.
+3. **Question-length guidance.** ✅ `commands/research.md` step 1 now instructs condensing long/punctuation-heavy questions to ~100 words plain-ASCII before the `Workflow` call (attempt 1 failed when the Scope agent hit the structured-output retry cap).
 
 ### Deferred (revisit post-MVP)
 - Privacy boundaries (Claude-read/write per vault)

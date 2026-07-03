@@ -34,6 +34,38 @@ def normalize_name(raw: str) -> str:
     return name
 
 
+def discover_vaults(root: Path) -> list[Path]:
+    """Every dir under root containing overview.md (flat or namespaced)."""
+    out = []
+    for overview in root.rglob("overview.md"):
+        d = overview.parent
+        if any(part in EXCLUDED_DIRS for part in d.relative_to(root).parts):
+            continue
+        out.append(d)
+    return out
+
+
+def resolve_vault(root: Path, raw_name: str) -> Path | None:
+    """Resolve a vault by relative path (research/local-llms), legacy <name>-vault,
+    or a unique leaf-name match. Returns None if nothing matches."""
+    cand = root / raw_name
+    if cand.is_dir():
+        return cand
+    legacy = root / f"{normalize_name(raw_name)}-vault"
+    if legacy.is_dir():
+        return legacy
+    norm = normalize_name(raw_name)
+    matches = [d for d in discover_vaults(root)
+               if raw_name in (d.name,) or normalize_name(d.name) == norm]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        rels = ", ".join(str(d.relative_to(root)) for d in matches)
+        print(f"Error: '{raw_name}' is ambiguous — matches: {rels}. Use the full path.", file=sys.stderr)
+        sys.exit(1)
+    return None
+
+
 def split_frontmatter(text: str) -> tuple[dict, str]:
     """Extract frontmatter dict and body. Returns ({}, text) if no/invalid frontmatter."""
     if not text.startswith("---"):
@@ -110,12 +142,12 @@ def main() -> None:
                         help="Federation root path. Default: ~/knowledge-vaults/")
     args = parser.parse_args()
 
-    name = normalize_name(args.name)
     root = Path(args.root).expanduser() if args.root else (Path.home() / "knowledge-vaults")
-    vault_dir = root / f"{name}-vault"
-    if not vault_dir.exists():
-        print(f"Error: vault not found at {vault_dir}", file=sys.stderr)
+    vault_dir = resolve_vault(root, args.name)
+    if vault_dir is None:
+        print(f"Error: vault not found: {args.name} (under {root})", file=sys.stderr)
         sys.exit(1)
+    name = str(vault_dir.relative_to(root))
 
     # Header from overview.md
     overview_path = vault_dir / "overview.md"
@@ -180,18 +212,30 @@ def main() -> None:
             print(f"- `{rel}`")
         print()
 
-    # Resolution maps
+    # Resolution maps. stem_to_paths keeps ALL paths per stem so link resolution
+    # can prefer a same-folder target (Obsidian's shortest-path behavior) — this
+    # is what keeps each dated run's [[sources]] pointing within its own run folder
+    # when a topic vault accumulates many runs with repeated stems.
     title_to_path: dict[str, str] = {}
-    stem_to_path: dict[str, str] = {}
+    stem_to_paths: dict[str, list[str]] = defaultdict(list)
     for rel, (fm, _) in file_data.items():
         title = fm.get("title")
         if isinstance(title, str) and title and title not in title_to_path:
             title_to_path[title] = rel
-        stem = Path(rel).stem
-        stem_to_path.setdefault(stem, rel)
+        stem_to_paths[Path(rel).stem].append(rel)
 
-    def resolve(target: str) -> str | None:
-        return title_to_path.get(target) or stem_to_path.get(target)
+    def resolve(target: str, source_rel: str) -> str | None:
+        source_dir = str(Path(source_rel).parent)
+        # 1. same-directory stem match
+        for cand in stem_to_paths.get(target, []):
+            if str(Path(cand).parent) == source_dir:
+                return cand
+        # 2. title match
+        if target in title_to_path:
+            return title_to_path[target]
+        # 3. any stem match
+        cands = stem_to_paths.get(target, [])
+        return cands[0] if cands else None
 
     # Graph
     forward: dict[str, list[tuple[str, str]]] = {}
@@ -203,7 +247,7 @@ def main() -> None:
         seen_targets: set[str] = set()
         seen_unresolved: set[str] = set()
         for target in links:
-            resolved = resolve(target)
+            resolved = resolve(target, rel)
             if resolved:
                 if target not in seen_targets:
                     edges.append((target, resolved))

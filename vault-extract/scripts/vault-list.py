@@ -3,8 +3,9 @@
 
 Usage: vault-list.py [--root <path>]
 
-Walks <root>/*-vault/overview.md, parses the YAML frontmatter, and renders
-one markdown section per vault for Claude to use during vault selection.
+Finds every dir under <root> containing overview.md (at any depth — flat
+`<name>-vault/` and namespaced `research/<slug>/` alike), parses the YAML
+frontmatter, and renders one section per vault for Claude to use during selection.
 """
 from __future__ import annotations
 
@@ -45,10 +46,25 @@ def count_files(vault_dir: Path) -> int:
     return count
 
 
-def render_vault(vault_dir: Path) -> str:
+def discover_vaults(root: Path) -> list[tuple[str, Path]]:
+    """Every dir containing overview.md, named by its path relative to root.
+
+    Finds both flat top-level vaults (`goddard-vault`) and namespaced ones
+    (`research/local-llms`). Run folders lack overview.md, so they're never
+    mistaken for vaults."""
+    found = []
+    for overview in root.rglob("overview.md"):
+        vault_dir = overview.parent
+        if any(part in EXCLUDED_DIRS for part in vault_dir.relative_to(root).parts):
+            continue
+        found.append((str(vault_dir.relative_to(root)), vault_dir))
+    return sorted(found, key=lambda t: t[0])
+
+
+def render_vault(name: str, vault_dir: Path) -> str:
     """Render one vault as a markdown section."""
     overview_path = vault_dir / "overview.md"
-    lines = [f"## {vault_dir.name}", "", f"- **Path**: `{vault_dir}`"]
+    lines = [f"## {name}", "", f"- **Path**: `{vault_dir}`"]
 
     if not overview_path.exists():
         lines.append("- *(no overview.md — vault not fully scaffolded)*")
@@ -115,23 +131,20 @@ def main() -> None:
         print(f"Hint: run /vault-x:init first.", file=sys.stderr)
         sys.exit(1)
 
-    vault_dirs = sorted(
-        d for d in root.iterdir()
-        if d.is_dir() and not d.name.startswith(".")
-    )
+    vaults = discover_vaults(root)
 
     print(f"# Knowledge Vaults — {root}")
     print()
 
-    if not vault_dirs:
-        print("No vaults yet. Create one with `/vault-x:create <name>`.")
+    if not vaults:
+        print("No vaults yet. Create one with `/vault-x:create <name>` or `/vault-x:research`.")
         return
 
-    print(f"{len(vault_dirs)} vault(s).")
+    print(f"{len(vaults)} vault(s).")
     print()
 
-    for vault_dir in vault_dirs:
-        print(render_vault(vault_dir))
+    for name, vault_dir in vaults:
+        print(render_vault(name, vault_dir))
 
 
 if __name__ == "__main__":

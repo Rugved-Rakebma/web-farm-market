@@ -6,13 +6,20 @@ This directory is a federation of structured knowledge-base vaults, managed by t
 
 ```
 ~/knowledge-vaults/
-├── CLAUDE.md           ← you are here (federation orientation)
-└── <name>-vault/       ← one or more vaults
-    ├── overview.md     ← vault identity (machine-readable frontmatter)
-    ├── CLAUDE.md       ← per-vault write conventions for Claude
-    ├── .obsidian/      ← Obsidian recognition
-    └── <content>       ← whatever structure this vault uses
+├── CLAUDE.md               ← you are here (federation orientation)
+├── <name>-vault/           ← curated top-level vaults
+│   ├── overview.md         ← vault identity (machine-readable frontmatter)
+│   ├── CLAUDE.md           ← per-vault write conventions for Claude
+│   ├── .obsidian/          ← Obsidian recognition
+│   └── <content>           ← whatever structure this vault uses
+└── research/               ← namespace for /vault-x:research output
+    └── <topic-slug>/       ← one topic vault per subject (same vault shape)
+        └── YYYY-MM-DD-<query>/   ← one dated run per research question
 ```
+
+A vault is any directory containing `overview.md` — flat (`goddard-vault`) or
+namespaced (`research/local-llms`). Run folders have no `overview.md`, so they are
+not themselves vaults.
 
 ## How vaults work
 
@@ -26,8 +33,9 @@ This directory is a federation of structured knowledge-base vaults, managed by t
 | Action | Command |
 |---|---|
 | See all vaults with their purposes | `/vault-x:list` |
-| Map a single vault's contents | `/vault-x:view <vault>` |
+| Map a single vault's contents | `/vault-x:view <vault>` (path, e.g. `research/local-llms`) |
 | Create a new vault | `/vault-x:create <name>` |
+| Research a question into a topic vault | `/vault-x:research "<question>"` |
 
 **To write into a vault:** read that vault's `CLAUDE.md` for its conventions, then write following the declared frontmatter schema and link practice.
 
