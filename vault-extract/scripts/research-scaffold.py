@@ -116,6 +116,32 @@ def ensure_topic_vault(root: Path, slug: str, vault_title: str, purpose: str, to
     return vault_dir
 
 
+def bump_updated(vault_dir: Path, today: str) -> None:
+    """Set overview.md's `updated:` to today (the vault-level staleness signal),
+    inserting it right after `created:` if absent. Line-level edit — the rest of
+    the frontmatter is left untouched."""
+    overview = vault_dir / "overview.md"
+    if not overview.exists():
+        return
+    lines = overview.read_text(encoding="utf-8").splitlines(keepends=True)
+    out, done = [], False
+    for line in lines:
+        if not done and re.match(r"^updated:\s", line):
+            out.append(f"updated: {today}\n")
+            done = True
+        else:
+            out.append(line)
+    if not done:  # no updated: line yet — insert after created:
+        rebuilt = []
+        for line in out:
+            rebuilt.append(line)
+            if not done and re.match(r"^created:\s", line):
+                rebuilt.append(f"updated: {today}\n")
+                done = True
+        out = rebuilt
+    overview.write_text("".join(out), encoding="utf-8")
+
+
 def run_folder_path(vault_dir: Path, today: str, slug: str) -> Path:
     base = f"{today}-{slug}"
     candidate = vault_dir / base
@@ -299,6 +325,7 @@ def main() -> None:
     root = Path(args.root).expanduser() if args.root else (Path.home() / "knowledge-vaults")
 
     vault_dir = ensure_topic_vault(root, slug, vault_title, args.vault_purpose, today)
+    bump_updated(vault_dir, today)   # stamp the vault's staleness signal on every run
     run_dir = run_folder_path(vault_dir, today, slugify(title))
     run_dir.mkdir()
 

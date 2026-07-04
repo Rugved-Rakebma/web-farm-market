@@ -97,6 +97,8 @@ def render_vault(name: str, vault_dir: Path) -> str:
     status = fm.get("status", "")
     language = fm.get("language", "")
     source_kinds = fm.get("source_kinds") or []
+    created = fm.get("created", "")
+    updated = fm.get("updated", "")
 
     if purpose:
         lines.append(f"- **Purpose**: {purpose}")
@@ -112,6 +114,8 @@ def render_vault(name: str, vault_dir: Path) -> str:
         lines.append(f"- **Language**: {language}")
     if source_kinds:
         lines.append(f"- **Source kinds**: {', '.join(str(s) for s in source_kinds)}")
+    if created or updated:
+        lines.append(f"- **Created**: {created or '—'} · **Updated**: {updated or '—'}")
 
     file_count = count_files(vault_dir)
     lines.append(f"- **Files**: {file_count}")

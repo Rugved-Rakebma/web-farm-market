@@ -12,13 +12,16 @@ Two layers:
 ## Plugin Structure
 
 ```
-commands/               # /vault-x:init, /vault-x:create, /vault-x:list, /vault-x:view, /vault-x:research
+commands/               # /vault-x:init, /vault-x:create, /vault-x:list, /vault-x:view, /vault-x:research, /vault-x:grow
 scripts/                # Python implementations (uses pyyaml)
   vault-init.py         # Scaffold federation root + CLAUDE.md
   vault-create.py       # Scaffold a new vault dir + overview.md + CLAUDE.md + .obsidian/
   vault-list.py         # Federation overview — recursive: any dir with overview.md, named by path
   vault-view.py         # Single-vault map (path resolution + folder-relative wiki-link graph)
   research-scaffold.py  # Deterministic: deep-research run JSON -> dated run in research/<slug>/
+  research-source.py    # Deterministic: one raw source note -> research/<slug>/sources/ (used by grow)
+workflows/              # Workflow scripts launched via Workflow({scriptPath})
+  deep-research-local.js # Fork of Anthropic's deep-research — skips the flaky Scope agent (angles supplied)
 templates/              # Files written by init/create/research
   federation-CLAUDE.md
   vault-CLAUDE.md
@@ -40,10 +43,14 @@ leaf match. Run folders have no `overview.md`, so they are never treated as vaul
 `/vault-x:research "<question>"` turns a one-shot research report into persistent,
 wiki-linked vault knowledge. It runs **only in the main loop** and sequences three tools:
 
-1. **Native `deep-research` workflow** — `Workflow({name:"deep-research", args})`. Anthropic's
-   bundled harness (fan-out search → adversarial verify → cited synthesis). Returns structured
-   JSON: `{question, summary, findings[], caveats, openQuestions[], sources:[{url, quality,
-   angle, claimCount}], stats}`. We inherit its improvements for free — no reimplementation.
+1. **Deep-research (local fork)** — `workflows/deep-research-local.js`, run via
+   `Workflow({scriptPath, args:{question, angles}})`. A fork of Anthropic's bundled deep-research
+   (fan-out search → adversarial verify → cited synthesis) that **skips the native Scope agent**:
+   that agent aborts runs by mis-emitting structured output (JSON↔XML slip) and *throws*, killing
+   the whole run at its single non-redundant root step. Instead the command generates the 5 search
+   angles in the main loop (reliable) and passes them in. Agents are pinned to `opus`. Returns the
+   same structured JSON `{question, summary, findings[], caveats, openQuestions[], sources[], stats}`,
+   so downstream is unchanged. **It's a pinned snapshot — re-sync if Anthropic updates deep-research.**
 2. **`web-x` enrichment** — the native Fetch phase uses shallow `WebFetch`, so video/JS/paywalled
    sources return `claimCount == 0`. The command deep-reads exactly those URLs via the `web-x:web`
    skill and passes them as an enrichment map.
@@ -59,6 +66,23 @@ accumulating dated runs. Two slugs: the **topic** names the vault (`--vault-slug
 
 `Workflow` is a **main-loop-only tool** — the command must never be delegated to a subagent.
 Each run folder holds `report.md`, `blueprint.md`, `sources.md`, and `raw/`.
+
+## The `grow` command (vault maturation)
+
+`/vault-x:grow <vault>` matures an existing research topic vault in two connected phases:
+**breadth** then **depth**. It runs in the main loop and composes the pieces above:
+
+1. **Assess** — read the vault's runs and summarize coverage + gaps.
+2. **Breadth** — propose gap questions, confirm via `AskUserQuestion`, and run
+   `/vault-x:research`'s flow (routing-free — vault is known) for each pick.
+3. **Depth** — rank sources across **all** runs by cross-run citation × quality, pull the
+   top ~8 full-texts via `web-x:web`, and write them via `research-source.py` into a
+   **vault-level `sources/` library** (deduped, each stamped `published`/`retrieved`/`cited_by`).
+
+Depth *after* breadth is deliberate: it lets sources be ranked across the whole matured
+vault. A topic vault thus becomes two layers — **runs** (analysis) + **`sources/`** (raw
+evidence). A single `/vault-x:research` only self-heals its own failed fetches; all
+deliberate depth lives in `grow`.
 
 ## Prerequisites
 

@@ -196,6 +196,25 @@ Longer human-readable overview: history, examples, anything authored.
 - **Folder-relative link resolution.** `vault-view` now prefers a same-directory target when resolving `[[stem]]`, so each dated run's `[[sources]]`/`[[blueprint]]` links resolve within its own run folder even when a topic vault holds many runs with repeated stems. **Supersedes the cross-run basename-collision limitation** logged 2026-07-02.
 - **Migration:** the one existing run moved from `research-vault/` → `research/local-llms/` (fresh topic overview; run folder + its 2026-07-02 date preserved).
 
+### 2026-07-03 (`/vault-x:grow` — vault maturation; timestamp foundation)
+
+- **Staleness foundation first.** Every run file carries `date` (when researched); topic `overview.md` carries `created` + `updated`, and the scaffolder **bumps `updated` on every run**. `/vault-x:list` surfaces Created·Updated. `CLAUDE.md` stays prose-only (meta file). This is the substrate a future refresh process needs — built before enrichment.
+- **`grow` is separate from `research`, by design.** `research` is atomic (one question → one run). `grow` is a **vault-level maturation** pass over an existing topic vault. Baking maturation into every research call would conflate "add a data point" with "mature the whole corpus" and explode per-call cost.
+- **A-after-B (depth after breadth).** `grow` runs breadth (gap research) *then* depth (source enrichment). Enriching after breadth lets sources be ranked by **cross-run** importance (cited by many runs × quality) and deduped — strictly better than per-run enrichment, which can't see across runs.
+- **Vault-level `sources/` evidence library.** Enriched raw text lives at `research/<slug>/sources/` (deduped, URL-derived slug, stamped `published`/`retrieved`/`cited_by`), not per-run `raw/`. Turns a topic vault into two layers: **runs = analysis**, **sources/ = evidence**. Written by the standalone `research-source.py`.
+- **One pipeline, confirm checkpoints.** `grow` = Assess → propose breadth (`AskUserQuestion`, cost-flagged) → research gaps → enrich top-K → report. Checkpoints give separability for free (bail after assess; pick no gaps → enrich-only). `vault-list`/`vault-view` unchanged — `sources/` has no `overview.md` so it's never mistaken for a vault.
+- **`research` keeps only its `claimCount==0` self-heal.** All deliberate depth moved to `grow`.
+- **Deferred:** run→`sources/` back-linking; per-run machine-readable sources sidecar; a `## Runs` index in overview; staleness *refresh* (grow's future phase); promotion into curated vaults (avenue C).
+
+### 2026-07-04 (fork deep-research — supply angles ourselves)
+
+- **The native Scope agent aborts runs.** Anthropic's bundled `deep-research` starts with a single Scope agent that must emit the pipeline's most complex structured output (question + 5 angle objects). The model intermittently slips JSON↔XML tool-call encodings, fails the 5-strike `StructuredOutput` cap, and **throws** — killing the whole ~2M-token run at its non-redundant root step. Observed 2/2 on a real run (and once on the original local-llms run).
+- **Fix: supply the angles ourselves; skip the Scope agent.** New `vault-extract/workflows/deep-research-local.js` — a fork of the native script with the Scope agent removed; the main loop (which emits valid structured output reliably) generates the 5 `{label, query}` angles and passes them via `args`. Everything downstream (dedup, 3-vote verify, synthesize, return shape) is byte-identical, so `research-scaffold.py` + the synthesis-check are unchanged. Launched via `Workflow({scriptPath, args:{question, angles, caps?}})`.
+- **Opus was already in play.** The native script sets **no** per-agent model, so subagents inherit the session model — which is Opus 4.8. The flakiness is Opus's; pinning `model:'opus'` in the fork is a *guarantee* (and survives a non-opus session), **not** the cure. The cure is removing the Scope agent.
+- **`args` normalization.** The harness may deliver `args` as an object or a JSON string; the fork normalizes once at the top (parse-if-string) before reading `caps`/`question`/`angles`. `caps` also lets a tiny smoke run validate the JS cheaply (~13 agents).
+- **Validated:** smoke run (tiny caps) cleared Scope, ran 13 agents, returned a well-formed report with real synthesis. `research.md`/`grow.md` updated to generate angles + launch the fork.
+- **Deferred:** in-fork synthesis hardening (the command already reconstructs from transcript); a re-sync routine for Anthropic's deep-research updates; per-phase cheaper models if opus cost bites.
+
 ---
 
 ## Resolved tensions

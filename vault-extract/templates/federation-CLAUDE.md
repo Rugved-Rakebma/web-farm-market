@@ -36,6 +36,7 @@ not themselves vaults.
 | Map a single vault's contents | `/vault-x:view <vault>` (path, e.g. `research/local-llms`) |
 | Create a new vault | `/vault-x:create <name>` |
 | Research a question into a topic vault | `/vault-x:research "<question>"` |
+| Mature a research vault (breadth + depth) | `/vault-x:grow <vault>` |
 
 **To write into a vault:** read that vault's `CLAUDE.md` for its conventions, then write following the declared frontmatter schema and link practice.
 

@@ -13,6 +13,7 @@ source_kinds:
   - fetched sources
   - synthesized reports
 created: <YYYY-MM-DD>
+updated: <YYYY-MM-DD>
 ---
 
 # <vault-title>

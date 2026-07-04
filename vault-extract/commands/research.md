@@ -13,11 +13,8 @@ below to a subagent.
 
 1. **Parse args.** Extract the quoted `<question>` (required). Optional `--root`
    passes through to the scaffold script. If no question is given, ask for one.
-   **Keep the question tight and plain-ASCII before passing it on.** Very long or
-   punctuation-heavy questions (em-dashes `—`, `×`, curly quotes) can destabilize
-   the harness's Scope agent and fail the whole run. If the user's question is
-   long, condense it to ~100 words of plain text (preserving intent) for the
-   `Workflow` call — keep their full wording for your own reference.
+   State the question clearly; an overly long question can be condensed to ~100
+   words (preserving intent) — keep the user's full wording for your own reference.
 
 2. **Discover existing research vaults.** Read `<root>/research/*/overview.md`
    (default root `~/knowledge-vaults/`) for each topic vault's `name`, `purpose`,
@@ -38,10 +35,22 @@ below to a subagent.
    user can pick "Other" to type a custom slug. Resolve the answer to a final
    `<vault-slug>` (+ a display title and one-line purpose if it's new).
 
-5. **Run deep research.** Invoke the native harness and await its result JSON:
-   ```
-   Workflow({ name: "deep-research", args: "<question>" })
-   ```
+5. **Run deep research (via the local fork).** The native `deep-research` harness
+   aborts at its Scope agent (it mis-emits structured output and throws), so we
+   supply the search angles ourselves and run the plugin's forked workflow, which
+   skips that step:
+   - **Decompose the question into 5 search angles** yourself — each `{label, query}`,
+     covering complementary directions (broad/primary · technical/benchmarks ·
+     recent · practitioner/implementation · contrarian/skeptical). Generating these
+     in the main loop is reliable (the failure was the harness's Scope subagent).
+   - Resolve the plugin root, then launch the fork and await its result JSON:
+     ```bash
+     echo ${CLAUDE_PLUGIN_ROOT}     # absolute plugin path for the scriptPath below
+     ```
+     ```
+     Workflow({ scriptPath: "<plugin-root>/workflows/deep-research-local.js",
+                args: { question: "<question>", angles: [ {label, query}, … 5 ] } })
+     ```
    Return shape (use it directly — don't reformat):
    `{ question, summary, findings[], caveats, openQuestions[], refuted[],
    sources:[{url, quality, angle, claimCount}], stats }`.
