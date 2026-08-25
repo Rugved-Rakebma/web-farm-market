@@ -12,39 +12,39 @@ import argparse
 import sys
 from pathlib import Path
 
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common as C  # noqa: E402
 
-PLUGIN_ROOT = Path(__file__).resolve().parent.parent
-TEMPLATE_PATH = PLUGIN_ROOT / "templates" / "federation-CLAUDE.md"
 
+def _main(args) -> None:
+    template_path = C.TEMPLATES_DIR / "federation-CLAUDE.md"
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Initialize the knowledge-vaults federation root.")
-    parser.add_argument("--root", type=str, default=None,
-                        help="Federation root path. Default: ~/knowledge-vaults/")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite existing CLAUDE.md if present.")
-    args = parser.parse_args()
-
-    root = Path(args.root).expanduser() if args.root else (Path.home() / "knowledge-vaults")
+    root = C.federation_root(args)
     root.mkdir(parents=True, exist_ok=True)
 
-    claude_md = root / "CLAUDE.md"
+    claude_md = root / C.CLAUDE_MD
     if claude_md.exists() and not args.force:
         print(f"Federation root already initialized at {root}")
-        print(f"  CLAUDE.md exists. Use --force to overwrite.")
+        print(f"  {C.CLAUDE_MD} exists. Use --force to overwrite.")
         return
 
-    if not TEMPLATE_PATH.exists():
-        print(f"Error: template not found at {TEMPLATE_PATH}", file=sys.stderr)
-        sys.exit(1)
+    if not template_path.exists():
+        raise C.VaultError(f"template not found at {template_path}")
 
-    claude_md.write_text(TEMPLATE_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    claude_md.write_text(template_path.read_text(encoding="utf-8"), encoding="utf-8")
 
     print(f"Initialized federation root at {root}")
-    print(f"  Wrote CLAUDE.md")
+    print(f"  Wrote {C.CLAUDE_MD}")
     print()
-    print(f"Next: create a vault with `/vault-x:create <name>`.")
+    print("Next: create a vault with `/vault-x:create <name>`.")
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(
+        description="Initialize the knowledge-vaults federation root.")
+    C.add_root_arg(parser)
+    parser.add_argument("--force", action="store_true",
+                        help="Overwrite existing CLAUDE.md if present.")
+    C.run(parser, _main)

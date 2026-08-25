@@ -12,8 +12,12 @@ language: en
 source_kinds:
   - <e.g. books, lectures, notes>
 created: <YYYY-MM-DD>
+updated: <YYYY-MM-DD>
 ---
 
 # <vault-name>
 
 Longer human-readable overview. History, examples, what makes this vault distinctive, anything authored that doesn't fit in frontmatter.
+
+This is a **tier-1** vault at the federation root — hand-maintained, and not reproducible
+by any classifier's tooling. See `~/knowledge-vaults/CLAUDE.md`.

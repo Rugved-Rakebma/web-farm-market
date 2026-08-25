@@ -4,7 +4,7 @@ purpose: |
   <purpose>
 topics:
   - <vault-title>
-domain: research
+domain: <classifier>
 audience: self
 status: active
 language: en
@@ -26,6 +26,10 @@ Research on **<vault-title>**, produced by `/vault-x:research`. Each dated subfo
 - `sources.md` — every source, its quality, and whether web-x deep-read it
 - `raw/` — full extractions for sources the native fetch skimmed
 
-This is a **lab notebook, not curated knowledge**. To make a finding durable,
-promote a distilled note into a curated topic vault by hand — cross-vault
-wiki-links don't resolve.
+Vault-level `sources/` holds the deduped raw-source evidence library built by
+`/vault-x:grow`, shared across all runs.
+
+This is a **lab notebook, not curated knowledge** — a tier-2 vault under the
+`<classifier>/` classifier. It stays there while the tooling can reproduce it; if it ever
+acquires hand-maintained content that a re-run would destroy, it graduates to a tier-1
+vault at the federation root via `/vault-x:graduate`. See `~/knowledge-vaults/CLAUDE.md`.

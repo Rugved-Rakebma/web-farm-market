@@ -107,7 +107,8 @@ is what dominates the ~10-minute wall-clock.
 `/vault-x:research` sits *outside* this box. It calls the harness, waits for the returned
 JSON, then does two things the harness doesn't: (1) deep-reads any source the shallow
 `WebFetch` skimmed (`claimCount == 0`) via `web-x`, and (2) writes the whole run —
-report, blueprint, sources, raw — into `research-vault/` as a permanent, wiki-linked
+report, blueprint, sources, raw — into the target vault (a tier-2 `research/<slug>/` by
+default, or a tier-1 `<name>-vault/`) as a permanent, wiki-linked
 record. The harness produces a throwaway report; we make it compound.
 
 *(On this run the native Synthesize step returned placeholder text, so the orchestrator

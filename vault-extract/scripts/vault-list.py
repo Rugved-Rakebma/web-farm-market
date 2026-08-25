@@ -3,9 +3,10 @@
 
 Usage: vault-list.py [--root <path>]
 
-Finds every dir under <root> containing overview.md (at any depth — flat
-`<name>-vault/` and namespaced `research/<slug>/` alike), parses the YAML
-frontmatter, and renders one section per vault for Claude to use during selection.
+Enumerates the two-tier federation — tier-1 `<name>-vault/` and tier-2
+`<classifier>/<slug>/` — parses each vault's YAML frontmatter, and renders one
+section per vault for Claude to use during selection. Placements that violate
+the standard are reported under `## Anomalies` rather than silently ignored.
 """
 from __future__ import annotations
 
@@ -13,92 +14,46 @@ import argparse
 import sys
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:
-    print("Error: pyyaml not found. Install: pip install pyyaml", file=sys.stderr)
-    sys.exit(1)
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common as C  # noqa: E402
 
 
-EXCLUDED_DIRS = {".obsidian", ".git", ".trash", ".DS_Store"}
-
-
-def split_frontmatter(text: str) -> str | None:
-    """Return the YAML block between leading --- delimiters, or None."""
-    if not text.startswith("---"):
-        return None
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return None
-    return parts[1]
-
-
-def count_files(vault_dir: Path) -> int:
-    """Count markdown content files (excluding meta files and dotdirs)."""
-    excluded_names = {"overview.md", "CLAUDE.md"}
-    count = 0
-    for p in vault_dir.rglob("*.md"):
-        if p.name in excluded_names:
-            continue
-        if any(part in EXCLUDED_DIRS for part in p.parts):
-            continue
-        count += 1
-    return count
-
-
-def discover_vaults(root: Path) -> list[tuple[str, Path]]:
-    """Every dir containing overview.md, named by its path relative to root.
-
-    Finds both flat top-level vaults (`goddard-vault`) and namespaced ones
-    (`research/local-llms`). Run folders lack overview.md, so they're never
-    mistaken for vaults."""
-    found = []
-    for overview in root.rglob("overview.md"):
-        vault_dir = overview.parent
-        if any(part in EXCLUDED_DIRS for part in vault_dir.relative_to(root).parts):
-            continue
-        found.append((str(vault_dir.relative_to(root)), vault_dir))
-    return sorted(found, key=lambda t: t[0])
-
-
-def render_vault(name: str, vault_dir: Path) -> str:
+def render_vault(ref: C.VaultRef) -> str:
     """Render one vault as a markdown section."""
-    overview_path = vault_dir / "overview.md"
-    lines = [f"## {name}", "", f"- **Path**: `{vault_dir}`"]
+    overview_path = ref.path / C.OVERVIEW
+    lines = [f"### {ref.rel}", "", f"- **Path**: `{ref.path}`"]
 
     if not overview_path.exists():
         lines.append("- *(no overview.md — vault not fully scaffolded)*")
         lines.append("")
         return "\n".join(lines)
 
-    text = overview_path.read_text(encoding="utf-8")
-    fm_text = split_frontmatter(text)
-    if fm_text is None:
+    fm = C.load_frontmatter(overview_path)
+    if fm.raw is None:
         lines.append("- *(overview.md has no frontmatter)*")
         lines.append("")
         return "\n".join(lines)
 
-    try:
-        fm = yaml.safe_load(fm_text) or {}
-    except yaml.YAMLError as e:
-        lines.append(f"- *(overview.md has malformed YAML: {e})*")
+    if fm.error:
+        if fm.error.startswith("malformed YAML"):
+            lines.append(f"- *(overview.md has {fm.error})*")
+        else:
+            lines.append(f"- *(overview.md {fm.error})*")
         lines.append("")
         return "\n".join(lines)
 
-    if not isinstance(fm, dict):
-        lines.append("- *(overview.md frontmatter is not a mapping)*")
-        lines.append("")
-        return "\n".join(lines)
-
-    purpose = (fm.get("purpose") or "").strip()
-    topics = fm.get("topics") or []
-    domain = fm.get("domain", "")
-    audience = fm.get("audience", "")
-    status = fm.get("status", "")
-    language = fm.get("language", "")
-    source_kinds = fm.get("source_kinds") or []
-    created = fm.get("created", "")
-    updated = fm.get("updated", "")
+    data = fm.data
+    purpose = (data.get("purpose") or "").strip()
+    topics = data.get("topics") or []
+    domain = data.get("domain", "")
+    audience = data.get("audience", "")
+    status = data.get("status", "")
+    language = data.get("language", "")
+    source_kinds = data.get("source_kinds") or []
+    created = data.get("created", "")
+    updated = data.get("updated", "")
 
     if purpose:
         lines.append(f"- **Purpose**: {purpose}")
@@ -117,39 +72,59 @@ def render_vault(name: str, vault_dir: Path) -> str:
     if created or updated:
         lines.append(f"- **Created**: {created or '—'} · **Updated**: {updated or '—'}")
 
-    file_count = count_files(vault_dir)
-    lines.append(f"- **Files**: {file_count}")
+    lines.append(f"- **Files**: {len(C.content_files(ref.path))}")
     lines.append("")
     return "\n".join(lines)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="List vaults in the federation.")
-    parser.add_argument("--root", type=str, default=None,
-                        help="Federation root path. Default: ~/knowledge-vaults/")
-    args = parser.parse_args()
+def _main(args) -> None:
+    root = C.federation_root(args)
+    C.require_root(root)
 
-    root = Path(args.root).expanduser() if args.root else (Path.home() / "knowledge-vaults")
-    if not root.exists():
-        print(f"Error: federation root does not exist: {root}", file=sys.stderr)
-        print(f"Hint: run /vault-x:init first.", file=sys.stderr)
-        sys.exit(1)
-
-    vaults = discover_vaults(root)
+    d = C.discover(root)
 
     print(f"# Knowledge Vaults — {root}")
     print()
 
-    if not vaults:
+    if not d.vaults and not d.anomalies:
         print("No vaults yet. Create one with `/vault-x:create <name>` or `/vault-x:research`.")
         return
 
-    print(f"{len(vaults)} vault(s).")
-    print()
+    if d.vaults:
+        n1 = sum(1 for v in d.vaults if v.tier == C.TIER1)
+        n2 = len(d.vaults) - n1
+        print(f"{len(d.vaults)} vault(s) — {n1} tier-1, {n2} tier-2.")
+        print()
 
-    for name, vault_dir in vaults:
-        print(render_vault(name, vault_dir))
+        # d.vaults is sorted by (tier, classifier, slug), so a change in either
+        # component is exactly a group boundary — no regrouping pass needed.
+        group = None
+        for ref in d.vaults:
+            key = (ref.tier, ref.classifier)
+            if key != group:
+                group = key
+                if ref.tier == C.TIER1:
+                    print("## Tier 1 — graduated")
+                else:
+                    print(f"## Tier 2 — {ref.classifier}/")
+                print()
+            print(render_vault(ref))
+    else:
+        print("No vaults yet. Create one with `/vault-x:create <name>` or `/vault-x:research`.")
+        print()
+
+    if d.anomalies:
+        print("## Anomalies")
+        print()
+        print("These placements violate the two-tier standard, so they are not "
+              "resolvable as vaults:")
+        print()
+        for a in d.anomalies:
+            print(f"- `{a.rel}` — {a.reason}")
+        print()
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="List vaults in the federation.")
+    C.add_root_arg(parser)
+    C.run(parser, _main)

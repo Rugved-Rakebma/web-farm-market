@@ -16,4 +16,6 @@ argument-hint: [--root <path>]
 
 ## Notes
 
-- The script walks `<root>/*/overview.md` and aggregates the frontmatter. Vaults without an `overview.md` are skipped.
+- The script does a **bounded two-level scan** of `<root>`, finding vaults at exactly two positions: tier-1 `<name>-vault/` and tier-2 `<classifier>/<slug>/`. Output is grouped by tier. Directories without an `overview.md` — run folders, `sources/`, `records/` — are contents, not vaults, and never appear.
+- **Tier is readable from the name:** a `/` means tier 2; a `-vault` suffix means tier 1.
+- An **Anomalies** section lists placements that violate the two-tier standard (a `-vault` directory with no `overview.md`, a vault at the root without the suffix, a tier-2 vault carrying one). These are not resolvable as vaults — report them to the user; the fix is a rename or a move.

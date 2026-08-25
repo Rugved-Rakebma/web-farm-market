@@ -22,6 +22,16 @@ Create vault: **$ARGUMENTS**
 
 ## Notes
 
-- The script names the directory `<name>-vault/` (appending `-vault` if not present).
+- `create` always produces a **tier-1** vault: `<name>-vault/` at the federation root
+  (the suffix is appended if not present). The `-vault` suffix **is** the tier-1 marker.
+- `-vault` must never appear inside a classifier directory — the classifier already names
+  the kind, so tier-2 slugs carry no suffix. The script refuses a name containing a path
+  separator, so `create research/foo` fails rather than doing something surprising.
+- **To promote an existing tier-2 vault instead of starting fresh, use
+  `/vault-x:graduate`.** `create` starts empty; `graduate` moves one that already earned
+  it. Same destination, different histories.
+- The script refuses (exit 5) if the same topic already exists at the other tier, and
+  prints the `git mv` that graduation would use — creating a second vault for one topic
+  is the thing the two-tier standard exists to prevent.
 - The script does NOT pre-create `source/` or any subdirectories — the vault's internal layout is a decision made when the vault is designed.
 - The script does NOT programmatically register the vault with Obsidian's `obsidian.json` config.

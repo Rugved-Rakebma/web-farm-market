@@ -1,7 +1,7 @@
 {
   "name": "vault-x",
-  "version": "1.0.0",
-  "description": "Manage a federation of knowledge-base vaults — init, create, list, view",
+  "version": "2.0.0",
+  "description": "Manage a two-tier federation of knowledge-base vaults — init, create, list, view, research, grow, graduate",
   "author": { "name": "Rugved Ambekar" },
   "license": "MIT",
   "keywords": ["vault", "obsidian", "knowledge-base", "federation", "markdown", "frontmatter"]

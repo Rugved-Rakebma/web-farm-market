@@ -15,71 +15,13 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-try:
-    import yaml
-except ImportError:
-    print("Error: pyyaml not found. Install: pip install pyyaml", file=sys.stderr)
-    sys.exit(1)
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+import _common as C  # noqa: E402
 
 
-EXCLUDED_DIRS = {".obsidian", ".git", ".trash", ".DS_Store"}
-META_FILES = {"overview.md", "CLAUDE.md"}
 WIKI_LINK_RE = re.compile(r"\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
-
-
-def normalize_name(raw: str) -> str:
-    name = raw.strip()
-    if name.endswith("-vault"):
-        name = name[: -len("-vault")]
-    return name
-
-
-def discover_vaults(root: Path) -> list[Path]:
-    """Every dir under root containing overview.md (flat or namespaced)."""
-    out = []
-    for overview in root.rglob("overview.md"):
-        d = overview.parent
-        if any(part in EXCLUDED_DIRS for part in d.relative_to(root).parts):
-            continue
-        out.append(d)
-    return out
-
-
-def resolve_vault(root: Path, raw_name: str) -> Path | None:
-    """Resolve a vault by relative path (research/local-llms), legacy <name>-vault,
-    or a unique leaf-name match. Returns None if nothing matches."""
-    cand = root / raw_name
-    if cand.is_dir():
-        return cand
-    legacy = root / f"{normalize_name(raw_name)}-vault"
-    if legacy.is_dir():
-        return legacy
-    norm = normalize_name(raw_name)
-    matches = [d for d in discover_vaults(root)
-               if raw_name in (d.name,) or normalize_name(d.name) == norm]
-    if len(matches) == 1:
-        return matches[0]
-    if len(matches) > 1:
-        rels = ", ".join(str(d.relative_to(root)) for d in matches)
-        print(f"Error: '{raw_name}' is ambiguous — matches: {rels}. Use the full path.", file=sys.stderr)
-        sys.exit(1)
-    return None
-
-
-def split_frontmatter(text: str) -> tuple[dict, str]:
-    """Extract frontmatter dict and body. Returns ({}, text) if no/invalid frontmatter."""
-    if not text.startswith("---"):
-        return {}, text
-    parts = text.split("---", 2)
-    if len(parts) < 3:
-        return {}, text
-    try:
-        fm = yaml.safe_load(parts[1]) or {}
-        if not isinstance(fm, dict):
-            return {}, text
-    except yaml.YAMLError:
-        return {}, text
-    return fm, parts[2].lstrip()
 
 
 def build_tree(root: Path, prefix: str = "") -> list[str]:
@@ -88,7 +30,7 @@ def build_tree(root: Path, prefix: str = "") -> list[str]:
     entries = sorted(
         (
             e for e in root.iterdir()
-            if e.name not in EXCLUDED_DIRS and not e.name.startswith(".")
+            if e.name not in C.EXCLUDED_DIRS and not e.name.startswith(".")
         ),
         key=lambda p: (not p.is_dir(), p.name.lower()),
     )
@@ -101,18 +43,6 @@ def build_tree(root: Path, prefix: str = "") -> list[str]:
             extension = "    " if is_last else "│   "
             lines.extend(build_tree(entry, prefix + extension))
     return lines
-
-
-def walk_content_files(vault_dir: Path) -> list[Path]:
-    """All .md files except meta files and anything under excluded dirs."""
-    files = []
-    for p in sorted(vault_dir.rglob("*.md")):
-        if p.name in META_FILES:
-            continue
-        if any(part in EXCLUDED_DIRS for part in p.parts):
-            continue
-        files.append(p)
-    return files
 
 
 def extract_wiki_links(body: str) -> list[str]:
@@ -135,30 +65,34 @@ def render_file_summary(rel_path: str, fm: dict) -> str:
     return "".join(bits)
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Map a single vault.")
-    parser.add_argument("name", help="Vault name (with or without -vault suffix)")
-    parser.add_argument("--root", type=str, default=None,
-                        help="Federation root path. Default: ~/knowledge-vaults/")
-    args = parser.parse_args()
-
-    root = Path(args.root).expanduser() if args.root else (Path.home() / "knowledge-vaults")
-    vault_dir = resolve_vault(root, args.name)
-    if vault_dir is None:
-        print(f"Error: vault not found: {args.name} (under {root})", file=sys.stderr)
-        sys.exit(1)
-    name = str(vault_dir.relative_to(root))
+def _main(args) -> None:
+    root = C.federation_root(args)
+    C.require_root(root)
+    ref = C.resolve(root, args.name)
+    if ref is None:
+        raise C.VaultError(f"vault not found: {args.name} (under {root})",
+                           hint="Run /vault-x:list to see what exists.",
+                           code=C.E_NOTFOUND)
+    name = ref.rel      # never relative_to() — cannot raise
+    vault_dir = ref.path
 
     # Header from overview.md
-    overview_path = vault_dir / "overview.md"
-    overview_fm = {}
+    overview_path = vault_dir / C.OVERVIEW
+    overview_fm: dict = {}
     if overview_path.exists():
-        overview_fm, _ = split_frontmatter(overview_path.read_text(encoding="utf-8"))
+        overview_fm = C.parse_frontmatter(
+            overview_path.read_text(encoding="utf-8")
+        ).data
 
     display_name = overview_fm.get("name") or name
     purpose = (overview_fm.get("purpose") or "").strip()
 
     print(f"# {display_name}")
+    print()
+    if ref.tier == C.TIER2:
+        print(f"**Tier {ref.tier}** · classifier `{ref.classifier}/`")
+    else:
+        print(f"**Tier {ref.tier}**")
     print()
     if purpose:
         print(f"**Purpose**: {purpose}")
@@ -168,14 +102,14 @@ def main() -> None:
     print("## Layout")
     print()
     print("```")
-    print(f"{vault_dir.name}/")
+    print(f"{ref.rel}/")
     for line in build_tree(vault_dir):
         print(line)
     print("```")
     print()
 
     # Content
-    files = walk_content_files(vault_dir)
+    files = C.content_files(vault_dir)
     if not files:
         print("## Status")
         print()
@@ -187,13 +121,13 @@ def main() -> None:
     no_frontmatter_files: list[str] = []
     for f in files:
         text = f.read_text(encoding="utf-8")
-        fm, body = split_frontmatter(text)
+        fm = C.parse_frontmatter(text)
         rel = str(f.relative_to(vault_dir))
-        if not fm:
+        if not fm.data:
             no_frontmatter_files.append(rel)
             file_data[rel] = ({}, extract_wiki_links(text))
         else:
-            file_data[rel] = (fm, extract_wiki_links(body))
+            file_data[rel] = (fm.data, extract_wiki_links(fm.body))
 
     # Files with frontmatter
     with_fm = [rel for rel in sorted(file_data) if rel not in no_frontmatter_files]
@@ -201,8 +135,8 @@ def main() -> None:
         print("## Files")
         print()
         for rel in with_fm:
-            fm, _ = file_data[rel]
-            print(render_file_summary(rel, fm))
+            fm_data, _ = file_data[rel]
+            print(render_file_summary(rel, fm_data))
         print()
 
     if no_frontmatter_files:
@@ -218,8 +152,8 @@ def main() -> None:
     # when a topic vault accumulates many runs with repeated stems.
     title_to_path: dict[str, str] = {}
     stem_to_paths: dict[str, list[str]] = defaultdict(list)
-    for rel, (fm, _) in file_data.items():
-        title = fm.get("title")
+    for rel, (fm_data, _) in file_data.items():
+        title = fm_data.get("title")
         if isinstance(title, str) and title and title not in title_to_path:
             title_to_path[title] = rel
         stem_to_paths[Path(rel).stem].append(rel)
@@ -292,4 +226,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Map a single vault.")
+    parser.add_argument(
+        "name",
+        help="Vault reference: a path (research/local-llms), a tier-1 name "
+             "(foo-vault), or a unique slug",
+    )
+    C.add_root_arg(parser)
+    C.run(parser, _main)

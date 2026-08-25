@@ -1,6 +1,6 @@
 # Vault Plugin — Planning & Alignment
 
-> Living doc tracking design for the second plugin in `web-farm-market`. Status: **v1 surface defined; aligning on details before code**.
+> Living doc tracking design for the second plugin in `web-farm-market`. Status: **shipped; the v1 surface below is superseded in part by the two-tier standard — see the 2026-08-25 entry in the decisions log**.
 
 ## How to use this doc
 
@@ -62,6 +62,11 @@ The combination turns a folder of markdown into a navigable knowledge graph. Wit
 ---
 
 ## v1 operation surface (minimal)
+
+> **Superseded in part.** This section describes the pre-tier v1 shape. `<name>-vault/` is now
+> specifically **tier 1**, `list` does a bounded two-level scan rather than globbing
+> `<federation>/*/overview.md`, and the surface has grown to seven commands. See the
+> 2026-08-25 decisions-log entry.
 
 Four commands. Read-side first; write happens via Claude editing files directly, guided by the in-vault `CLAUDE.md`.
 
@@ -215,6 +220,25 @@ Longer human-readable overview: history, examples, anything authored.
 - **Validated:** smoke run (tiny caps) cleared Scope, ran 13 agents, returned a well-formed report with real synthesis. `research.md`/`grow.md` updated to generate angles + launch the fork.
 - **Deferred:** in-fork synthesis hardening (the command already reconstructs from transcript); a re-sync routine for Anthropic's deep-research updates; per-phase cheaper models if opus cost bites.
 
+### 2026-08-25 (the two-tier standard + `/vault-x:graduate`)
+
+- **Two tiers, and the path declares which.** `~/knowledge-vaults/` holds exactly two kinds of vault. **Tier 1** — `<name>-vault/` at the root: graduated, hand-maintained, not reproducible by tooling. **Tier 2** — `<classifier>/<slug>/`: machine-produced, owned by the classifier's tooling, slug carries **no** `-vault` suffix. The rule is biconditional: a `-vault` suffix means tier 1; membership in a classifier means tier 2; never both. `research/` is the only classifier, and a new one is justified only by a genuinely different **kind** of vault with its own generator — never to sub-categorise topics. That is what the slug is for.
+- **`<name>-vault` is tier 1, not legacy.** **Supersedes 2026-07-03's "Path-based vault identity"**, which framed flat `<name>-vault/` dirs as back-compat that "keeps working". They are the top tier and the destination of graduation. Path-based identity itself stands, and is now the mechanism by which tier is read — but **narrowed**: a vault is an `overview.md` at exactly one of two positions. Discovery is a bounded two-level `iterdir()`, not `rglob`, so an `overview.md` at depth 3+ is vault content rather than a phantom vault at no tier.
+- **`research/` is a classifier, not a namespace.** **Refines 2026-07-03.** The directory groups vaults by *how they are made*, and its tooling owns everything inside. Classifier is now a real parameter — `--classifier`, default `research` — rather than a constant. The no-suffix-inside-the-classifier rule from that entry stands and is now half of the biconditional above. A classifier that doesn't exist requires `--allow-new-classifier`, so a typo can't fork the federation.
+- **The graduation test.** *Could a fresh run of the classifier's tooling reproduce this vault?* If **no** — it holds private records, live decision documents, or distilled positions that must survive a re-run — it belongs at tier 1. That is the only criterion. Size, importance, and age are not criteria.
+- **Graduation is a move, not a copy.** **Supersedes the deferred "promotion/distillation of findings into topic vaults"** (2026-07-02) and "promotion into curated vaults (avenue C)" (2026-07-03). Both modelled the upward path as hand-copying *findings* out of the lab notebook into some curated vault. Wrong shape: the vault itself is what matures. Graduation is `git mv <classifier>/<slug> <name>-vault` + a rewrite of `CLAUDE.md` (it declares its own layers now, not the classifier's) + an `overview.md` update (`domain:` moves off the classifier). One-way. Nothing is copied and nothing is left behind.
+- **A tier-1 vault still receives tooling.** `/vault-x:research` and `/vault-x:grow` both target either tier, **implicitly** — no opt-in flag; the always-confirm step in the command layer is the gate. What graduation changes is **ownership**, not access: the classifier's tooling no longer owns the vault's shape, and hand-maintained layers win over any single run. **Supersedes 2026-07-02's `research-vault` entry**, which assumed one auto-created vault as the sole destination of every run.
+- **Auto-create is tier-2-only.** Tooling may materialise `<classifier>/<slug>/`; it may never materialise `<name>-vault/`. Tier 1 is a human act (`create`) or a graduation. "The tool silently created a tier-1 vault" is now structurally impossible.
+- **A stale reference is a hard error, never a silent redirect.** After `research/local-llms` graduates, `--vault research/local-llms` exits 5 naming the tier-1 home, with the corrected command in the hint. Considered and rejected: following `graduated_from:` automatically. A ~2M-token run must not land somewhere the user didn't name.
+- **`/vault-x:graduate` = script moves, Claude writes.** `scripts/vault-graduate.py` does the deterministic half — validate, audit, rewrite `overview.md` frontmatter, drop the tier-1 `CLAUDE.md` template with marker blocks, `git mv`. Claude fills the markers, because only it knows what the vault earned. Same deterministic-writer / LLM-judgement split as `research`.
+- **The audit is a necessary condition, not the test.** The script can't judge reproducibility, but it can enumerate what the classifier's tooling could not have written (anything that isn't `overview.md`/`CLAUDE.md`/`.obsidian/`/`sources/`/a dated run folder holding only the four known files). Empty set → refuse. Sufficiency is Claude's call, confirmed via `AskUserQuestion`. Verified: the audit refuses `research/local-llms` (5 runs + `sources/`, fully reproducible) and surfaces exactly `records/`, `advisor-packet/`, `playbook.md`, `colombia-relocation-brief.md`, `colombia-travel-log.md` in `personal-tax-vault`.
+- **Git: detect the tracking repo, never hardcode it.** The federation is tracked by a **bare** repo (`~/.home-env-git.git`, `--work-tree=$HOME`, the `henv` alias), so a plain `git mv` inside `~/knowledge-vaults` fails — no `.git` in the ancestry. Resolution order: explicit flags → env vars → ordinary repo via `rev-parse --show-toplevel` → **probe bare repos in `$HOME` and adopt the one whose `ls-files` tracks the source path** → `shutil.move` + print the exact staging command. Never commits. `status.showUntrackedFiles=no` is set on that repo, so the clean-tree gate must pass `-uall` or it reads a dirty tree as clean.
+- **Provenance in frontmatter, no tombstone.** Graduation writes `graduated:` and `graduated_from: <classifier>/<slug>`. A tombstone *directory* is wrong either way — with an `overview.md` it registers as a phantom vault in `list`; without one the walker can't see it. **No `tier:` key**: the path already declares it, and duplicating derivable state in the vault is the same mistake as `manifest.md`. History isn't derivable; tier is.
+- **Shared `scripts/_common.py`.** Tier-aware resolution `(tier, classifier, slug, path, rel)`, `target_ref()`, bounded `discover()`, the never-both validator, frontmatter, and one uniform entrypoint — extracted from the copies scattered across all six scripts. The library **raises `VaultError` and never calls `sys.exit`**, which is what makes resolution composable. `vault-view`'s local `resolve_vault()` and both `RESEARCH_NAMESPACE` constants are retired. Exit codes: 1 general · 2 argparse · 3 not found · 4 ambiguous · 5 tier violation.
+- **Bugs found and fixed while doing this.** (a) `resolve_vault`'s legacy `<name>-vault` branch short-circuited *before* the ambiguity guard, so a bare slug matching both tiers silently returned tier 1 and the guard never fired. (b) `ensure_topic_vault` checked one path, so the next run after a graduation silently re-scaffolded a duplicate. (c) `vault-create` had the same bug mirrored. (d) `research-scaffold.py` substituted only `<vault-title>`, so every tier-2 vault scaffolded since the template gained `research/<vault-slug>/` shipped an unreplaced placeholder. (e) two `slugify` implementations diverged (`naïve` → `nave` vs `na-ve`), which made `research-source.py` compute a different directory than the one `research-scaffold.py` created; unified on NFKD folding. (f) `raw/<host>.md` collided for two URLs on one host — now `source_slug` (host + path). (g) `bump_updated`'s regex wasn't scoped to the frontmatter block, missed `updated:2026-01-01`, and could double-insert. (h) excluded-dir filtering ran on absolute path parts. (i) absolute-path input escaped the root and crashed on `relative_to`.
+- **Terminology, fixed.** Three words, three meanings. **Tiers** = the federation's two levels. **Layers** = the hand-maintained additions a tier-1 vault earned. **Tracks** = runs vs `sources/` inside one vault. **Amends 2026-07-03's "two layers: runs = analysis, sources/ = evidence"** — that is now "two **tracks**", because "layers" was needed for the tier-1 sense.
+- **Deferred:** un-graduation (manual `git mv` back, by design); a second classifier; `--adopt` for vaults outside the root; auto-detecting graduation-readiness during `grow` (the audit exists, but proposing graduation unprompted is a step too far).
+
 ---
 
 ## Resolved tensions
@@ -233,8 +257,9 @@ Longer human-readable overview: history, examples, anything authored.
 
 ### Active design questions
 1. **`CLAUDE.md` template content** — concrete sections, examples, verbosity for both the federation-root and per-vault flavors.
-2. **`overview.md` template** — final frontmatter field list (current proposal is provisional).
+2. **`overview.md` template** — final frontmatter field list (current proposal is provisional). *Partly settled 2026-08-25: `graduated:` / `graduated_from:` are now written by `graduate`; a `tier:` key was considered and **rejected** — the path already declares tier.*
 3. **`list` filter on `status`.** Hide `dormant`/`archived` by default? Show all? Flag-controlled?
+4. **Graduation-readiness signal in `/vault-x:list`.** The reproducibility audit could run federation-wide and flag tier-2 vaults already holding unreproducible content. Cheap; unclear whether it's noise.
 
 ### Post-first-run fixes — APPLIED 2026-07-03
 > From the first live `/vault-x:research` run (2026-07-02); batched and applied together. See `deep-research-harness.md` for run context.

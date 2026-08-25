@@ -12,7 +12,7 @@
     {
       "name": "vault-extract",
       "source": "./vault-extract/",
-      "description": "Manage a federation of structured knowledge-base vaults — init, create, list, view"
+      "description": "Manage a two-tier federation of structured knowledge-base vaults — init, create, list, view, research, grow, graduate"
     }
   ]
 }
