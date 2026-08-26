@@ -1,6 +1,6 @@
 {
   "name": "web-x",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Unified web content extraction — static pages, video transcripts, and JS-rendered deep crawls",
   "author": { "name": "Rugved Ambekar" },
   "license": "MIT",
