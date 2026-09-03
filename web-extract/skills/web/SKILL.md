@@ -63,6 +63,13 @@ URL provided
 
 ## Error handling
 
+Exit codes: `0` success · `1` backend missing · `2` extraction failed · `3` blocked by anti-bot.
+
+**Exit 3 is not an empty page — it is a refusal.** Anti-bot systems return HTTP 200 with a
+challenge page, so `web-fetch.py` classifies output by content signature rather than length
+and refuses to print a challenge body. Never treat a blocked result as content, and never
+present it as the article. Retry later or from another network.
+
 If a backend CLI is not installed, scripts print a clear error with the install command to stderr:
 
 ```

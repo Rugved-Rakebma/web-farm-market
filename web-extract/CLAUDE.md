@@ -32,7 +32,7 @@ All scripts use Python 3.9+ stdlib only (no pip dependencies). They call CLI too
 
 | Script | Backend(s) | What It Orchestrates |
 |--------|-----------|---------------------|
-| `web-fetch.py` | trafilatura, crawl4ai | Try trafilatura → auto-escalate to crawl4ai if thin result |
+| `web-fetch.py` | trafilatura, crawl4ai | Try trafilatura → auto-escalate to crawl4ai if thin or blocked; classify before emitting |
 | `web-transcript.py` | yt-dlp | Player-client fallback chain + metadata + caption download (auto → manual) + json3/VTT-to-plaintext |
 | `web-crawl.py` | crawl4ai | BFS deep crawl with page cap validation |
 
@@ -48,6 +48,29 @@ All three are installed as standalone CLI tools via `uv tool install`. They are 
 
 **Keep yt-dlp current** — `uv tool upgrade yt-dlp`. YouTube changes extraction surfaces
 often and yt-dlp warns when a build is >90 days old.
+
+## Anti-bot challenge pages (why `web-fetch.py` classifies instead of measuring)
+
+Anti-bot systems answer with **HTTP 200 and a fully-formed challenge page**. Cloudflare's
+interstitial renders to ~500 chars of markdown — over any "is this thin?" threshold — so a
+length check alone hands the challenge back to the caller as the article. Verified against
+`nopecha.com/demo/cloudflare` before the fix: 495 bytes, **exit 0**, body reading
+*"Performing security verification … Ray ID: a32e1c724b9cae18"*.
+
+That is worse than an error. An error stops the caller; a silent wrong answer gets
+summarised, cited, and archived into a vault as a source. `vault-x` consumes this script.
+
+Same failure class as the YouTube section below — a block that does not look like a block.
+Same remedy: **match content signatures, not lengths.**
+
+`classify()` returns `ok` / `thin` / `blocked`. Blocked requires **both** a body under
+`BLOCK_MAX_CHARS` (2000) **and** a `BLOCK_MARKERS` hit. The pairing is load-bearing: an
+article *about* Cloudflare contains the word and would false-positive on signature alone,
+but runs to thousands of characters. Verified: the Scrapling stealth-fetching docs page
+mentions Cloudflare 26 times and classifies `ok` at 22,972 bytes.
+
+Blocked exits **3**, distinct from extraction failure (2), and the body is **not** printed.
+Never widen `BLOCK_MARKERS` with a string that could plausibly head a legitimate short page.
 
 ## YouTube bot-gating (why `web-transcript.py` pins player clients)
 

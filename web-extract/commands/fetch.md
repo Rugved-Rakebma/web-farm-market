@@ -19,6 +19,11 @@ Extract content from: **$ARGUMENTS**
 
 4. **Present the result** as clean markdown. Preserve all formatting, links, and structure.
 
+5. **Handle errors:**
+   - Exit code 1 → a backend is not installed; the message names the exact install command.
+   - Exit code 2 → extraction failed or returned nothing. Suggest `/web-x:crawl` if the URL is a site root, or report the page is unreachable.
+   - **Exit code 3 → blocked by an anti-bot challenge.** The site served a challenge page instead of content. Report this as a *refusal*, not an empty page — and never present the challenge text as the article. Tell the user to retry later, try another network, or open the page manually. Do not retry immediately in a loop.
+
 ## Notes
 
 - For video URLs, suggest `/web-x:transcript` instead.
