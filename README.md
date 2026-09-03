@@ -45,22 +45,36 @@ URL provided
 ├── Video platform? (youtube, vimeo, twitter, tiktok, twitch, etc.)
 │   └── yt-dlp → transcript + metadata
 │
-├── Single web page?
-│   ├── trafilatura (fast, no browser)
-│   │   └── Result thin/empty? → escalate to crawl4ai (headless Chromium)
-│   └── Result good → done
+├── Single web page? → three-tier ladder, escalating on the *classified* result
+│   ├── tier 1  trafilatura         → ok?      done
+│   ├── tier 2  crawl4ai            → on THIN     (page needs JS)
+│   └── tier 3  scrapling stealth   → on BLOCKED  (site refused us)
 │
 └── Multi-page site?
     └── crawl4ai → BFS crawl with max page limit
 ```
 
+Escalation is driven by **what the result is**, not how long it is. Anti-bot systems answer
+with HTTP 200 and a fully-formed challenge page, so a length check alone returns the
+challenge as though it were the article — see *Blocked ≠ empty* below.
+
 ### Backends
+
+Each tier is the best tool for its own job, not a general-purpose fallback.
 
 | Backend | What It Does | Speed |
 |---------|-------------|-------|
-| **trafilatura** | Static HTML → clean markdown. Strips nav, ads, boilerplate. Extracts title, author, date, tags. | <1s per page |
+| **trafilatura** | Static HTML → clean markdown. Strips nav, ads, boilerplate. Best-in-class article extraction. | <1s per page |
+| **crawl4ai** | Headless Chromium renders JavaScript, then extracts. Resolves links to absolute URLs. BFS multi-page crawl. | 3-5s per page |
+| **scrapling** | Fingerprint-spoofing browser that *solves* Cloudflare Turnstile and general bot-gating. Tier 3 only. | 9-30s per page |
 | **yt-dlp** | Video platforms → transcript text + metadata (title, channel, duration, description). Thousands of supported sites. | 2-5s |
-| **crawl4ai** | Headless Chromium renders JavaScript, then extracts. BFS multi-page crawl. Handles SPAs, dashboards, dynamic content. | 3-5s per page |
+
+### Blocked ≠ empty
+
+`/web-x:fetch` exits **3** when a site serves a challenge page instead of content, and
+refuses to print the challenge body. A blocked fetch is a *refusal*, not a thin page — and
+silently returning a Cloudflare interstitial as an article is worse than failing, because
+it gets summarised, cited, and archived as a source.
 
 ---
 
@@ -68,8 +82,8 @@ URL provided
 
 | Command | Backend | What It Does |
 |---------|---------|-------------|
-| `/web-x:fetch <url>` | trafilatura → crawl4ai fallback | Single page to clean markdown |
-| `/web-x:transcript <url>` | yt-dlp | Video transcript + metadata |
+| `/web-x:fetch <url> [--js] [--stealth]` | trafilatura → crawl4ai → scrapling | Single page to clean markdown |
+| `/web-x:transcript <url> [--timestamps]` | yt-dlp | Video transcript + metadata |
 | `/web-x:crawl <url> [max_pages]` | crawl4ai (BFS) | Multi-page site extraction |
 
 ### Overlap with existing tools
@@ -84,14 +98,18 @@ URL provided
 
 ## Prerequisites
 
-The plugin orchestrates three CLI tools. Install them before use:
+The plugin orchestrates four CLI tools. Install them before use:
 
 ```bash
 uv tool install trafilatura
 uv tool install yt-dlp
-uv tool install crawl4ai
-crawl4ai-setup
+uv tool install crawl4ai && crawl4ai-setup
+uv tool install "scrapling[fetchers,rag]" && scrapling install
 ```
+
+> **scrapling needs both extras.** `fetchers` alone installs cleanly and then fails at
+> runtime with *"Markdown conversion requires the markdownify package"* — markdown output
+> lives in the `rag` extra.
 
 If a backend is missing, commands print the exact install command:
 
@@ -109,14 +127,18 @@ web-farm-market/
 │   └── marketplace.json              # Marketplace definition
 └── web-extract/                      # Plugin: web-x
     ├── .claude-plugin/plugin.json
-    ├── CLAUDE.md
+    ├── CLAUDE.md                     # Dev guide + the hard-won backend doctrine
     ├── commands/                     # 3 user-invocable commands
     │   ├── fetch.md                  # /web-x:fetch
     │   ├── transcript.md             # /web-x:transcript
     │   └── crawl.md                  # /web-x:crawl
+    ├── scripts/                      # Python orchestration (stdlib only)
+    │   ├── web-fetch.py              # 3-tier ladder + block classification
+    │   ├── web-transcript.py         # yt-dlp client chain + json3/VTT parsing
+    │   └── web-crawl.py              # crawl4ai BFS deep crawl
     └── skills/
-        └── web/
-            └── SKILL.md              # Decision tree + backend documentation
+        ├── web/SKILL.md              # Decision tree + backend documentation
+        └── output/SKILL.md           # Obsidian-friendly .md file-shape contract
 ```
 
 ## Install
