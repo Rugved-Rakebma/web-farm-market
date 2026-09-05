@@ -16,7 +16,7 @@ Two layers:
 ```
 commands/           # /web-x:fetch, /web-x:transcript, /web-x:crawl
 scripts/            # Python orchestration (stdlib only)
-  web-fetch.py      # 3-tier ladder: trafilatura → crawl4ai → scrapling stealthy-fetch
+  web-fetch.py      # 3-tier ladder: trafilatura → scrapling fetch → scrapling stealthy-fetch
   web-transcript.py # yt-dlp metadata + subtitle download + VTT parsing
   web-crawl.py      # crawl4ai BFS deep crawl
 skills/
@@ -32,7 +32,7 @@ All scripts use Python 3.9+ stdlib only (no pip dependencies). They call CLI too
 
 | Script | Backend(s) | What It Orchestrates |
 |--------|-----------|---------------------|
-| `web-fetch.py` | trafilatura, crawl4ai, scrapling | 3-tier ladder driven by `classify()`; every tier's output gated through `emit()` |
+| `web-fetch.py` | trafilatura, scrapling | 3-tier ladder driven by `classify()`; every tier sanitised by `prepare()` and gated through `emit()` |
 | `web-transcript.py` | yt-dlp | Player-client fallback chain + metadata + caption download (auto → manual) + json3/VTT-to-plaintext |
 | `web-crawl.py` | crawl4ai | BFS deep crawl with page cap validation |
 
@@ -41,8 +41,8 @@ All scripts use Python 3.9+ stdlib only (no pip dependencies). They call CLI too
 | Tool | Install | Purpose |
 |------|---------|---------|
 | `trafilatura` | `uv tool install trafilatura` | Static page → markdown (fetch tier 1) |
-| `crawl4ai` | `uv tool install crawl4ai && crawl4ai-setup` | JS render (fetch tier 2) + deep crawl |
-| `scrapling` | `uv tool install "scrapling[fetchers,rag]" && scrapling install` | Anti-bot challenge solving (fetch tier 3) |
+| `crawl4ai` | `uv tool install crawl4ai && crawl4ai-setup` | Deep crawl only (`web-crawl.py`) |
+| `scrapling` | `uv tool install "scrapling[fetchers,rag]" && scrapling install` | JS render (fetch tier 2) + anti-bot (fetch tier 3) |
 | `yt-dlp` | `uv tool install yt-dlp` | Video transcript + metadata |
 
 All four are installed as standalone CLI tools via `uv tool install`. They are prerequisites — the plugin's scripts call them via subprocess.
@@ -59,11 +59,11 @@ often and yt-dlp warns when a build is >90 days old.
 | Tier | Backend | Cost | Fires when |
 |---|---|---|---|
 | 1 | trafilatura | <1s | default |
-| 2 | crawl4ai (headless Chromium) | 3–5s | tier 1 returns `thin` — page needs JS |
-| 3 | scrapling `stealthy-fetch --solve-cloudflare` | 9–30s | any tier returns `blocked` |
+| 2 | scrapling `extract fetch --ai-targeted` | 3–5s | tier 1 returns `thin` — page needs JS |
+| 3 | scrapling `stealthy-fetch --solve-cloudflare --ai-targeted` | 9–30s | any tier returns `blocked` |
 
 Each tier is the best tool for **its own job**, not a general-purpose fallback. Benchmarked
-2026-09-03; do not "simplify" the ladder without re-running these:
+2026-09-03 / 2026-09-05; do not "simplify" the ladder without re-running these:
 
 - **trafilatura stays tier 1.** It is a boilerplate-removal specialist and beats the
   alternatives at it. Against `scrapling extract get --ai-targeted`: on
@@ -71,14 +71,16 @@ Each tier is the best tool for **its own job**, not a general-purpose fallback. 
   the page's 1990s layout tables into ~8KB of markdown table scaffolding (67,566 vs 59,840
   bytes); on `simonwillison.net` scrapling leaks the masthead, the Subscribe link and a
   sponsor ad block that trafilatura drops. Folding tier 1 into scrapling makes output worse.
-- **crawl4ai stays tier 2.** `web-crawl.py` already requires it, so it costs nothing extra,
-  and it resolves relative links to absolute URLs where `scrapling extract fetch` leaves
-  them relative — relative links are broken links once `vault-x` archives the page.
-  Rendering quality is otherwise equivalent (verified on `quotes.toscrape.com/js`).
-- **scrapling is tier 3 only.** It is the only backend here that can clear an anti-bot
+- **crawl4ai was REMOVED from tier 2 in v1.4.0** on injection grounds — it leaked 9 of 9
+  hidden-HTML vectors. See "Injection" below. It remains correct for `web-crawl.py`.
+- **scrapling holds tiers 2 and 3.** Tier 3 is the only thing here that can clear an anti-bot
   challenge: verified against `nopecha.com/demo/cloudflare`, solving an interactive Turnstile
   in 9.2s and returning 26KB of real content. Its weaker article extraction is irrelevant at
-  this tier because the alternative at this tier is nothing at all.
+  both tiers, because the alternatives are broken output or no output.
+- **`--ai-targeted` is mandatory on tiers 2 and 3.** It is what strips hidden elements before
+  markdown conversion. It is a security control, not a formatting preference.
+
+`--js` starts at tier 2, `--stealth` jumps straight to tier 3.
 
 `--js` starts at tier 2, `--stealth` jumps straight to tier 3.
 
@@ -110,21 +112,77 @@ mentions Cloudflare 26 times and classifies `ok` at 22,972 bytes.
 Blocked exits **3**, distinct from extraction failure (2), and the body is **not** printed.
 Never widen `BLOCK_MARKERS` with a string that could plausibly head a legitimate short page.
 
-## Known gap: no prompt-injection sanitising
+## Injection: the measured backend comparison (why tier 2 changed in v1.4.0)
 
-Emitted markdown is **not** stripped of CSS-hidden text, `aria-hidden` nodes or zero-width
-unicode, any of which can carry instructions aimed at whatever model reads the result. This
-plugin's entire job is piping untrusted web content into an agent's context, and `vault-x`
-archives that content as cited sources — so the exposure is real, not theoretical.
+This plugin's whole job is piping attacker-controllable text into a model's context, and
+`vault-x` archives that text as cited sources. Text a human cannot see but a model reads
+verbatim is therefore the central threat, not a footnote.
 
-Tier 3 gets this for free via scrapling's `--ai-targeted`, but tiers 1 and 2 do not, and a
-pipeline is only as sanitised as its most-used path. Tier 1 serves the large majority of
-fetches.
+`tests/fixture-injection.html` plants 12 vectors: hidden CSS, `aria-hidden`, `hidden` attr,
+`<template>`, off-screen, white-on-white, `font-size:0`, HTML comment, zero-width runs,
+Unicode tag chars, bidi override. Measured 2026-09-05:
 
-Deliberately **not** half-fixed. A partial strip is the worst outcome: it reads as a
-mitigation while leaving vectors open. The real fix is one sanitising pass applied to
-`emit()` so every tier is covered, and it needs care — naive zero-width stripping breaks ZWJ
-emoji sequences and Persian/Arabic ZWNJ. Until then, treat every result as untrusted input.
+| Backend | Hidden-HTML leaked | Invisible-unicode leaked |
+|---|---|---|
+| trafilatura | 2 of 9 | 0 |
+| **crawl4ai** | **9 of 9** | 0 |
+| scrapling `get --ai-targeted` | 0 of 9 | **4 chars** |
+| scrapling `fetch --ai-targeted` | **0 of 9** | **0** |
+| scrapling `stealthy-fetch --ai-targeted` | **0 of 9** | **0** |
+
+crawl4ai leaked *every* hidden-HTML vector including `display:none` and `<template>`, and has
+no CLI mitigation: `-o markdown-fit` is byte-identical, and `-c excluded_tags=...` fails
+argument parsing and writes a **0-byte file that reads as a clean pass** — the same
+empty-looks-like-success trap this plugin already guards against elsewhere. So tier 2 moved.
+
+**trafilatura keeps tier 1 despite leaking 2 of 9.** Both leaks are computed-style
+invisibility (`font-size:0`, white-on-white) that no markdown-level pass can detect, because
+by the time text reaches `emit()` the style context is gone. It does strip `display:none`,
+`visibility:hidden`, `aria-hidden`, `hidden`, `<template>`, off-screen and comments. Accepting
+2 narrow vectors buys the <1s path that most fetches use.
+
+### Reproduce
+
+```bash
+python3 -m http.server 8731 --directory tests &
+python3 scripts/web-fetch.py "http://127.0.0.1:8731/fixture-injection.html" --js \
+  | grep -o "CANARY_[A-Z]*" | sort -u      # must print nothing
+python3 tests/scan-invisible.py <file>     # lists any invisible codepoints in a file
+```
+
+## `sanitize()` is a boundary guarantee, not a duplicate
+
+No tier currently in the ladder leaks invisible Unicode — all three backends normalise it
+away. `sanitize()` exists anyway because `scrapling extract get --ai-targeted` demonstrably
+*does* leak it (4 chars above), proving the vector is live in the ecosystem rather than
+theoretical. A backend swap must not be able to silently reopen it.
+
+It runs **before `classify()`** for a second, independent reason: zero-width padding inside
+`"Ray​ ID:"` evades block-signature matching entirely. Verified in `tests/test_sanitize.py` —
+un-sanitised, that string matches no marker and classifies `thin`, so it would have been
+returned as content.
+
+Policy — strip only what has no legitimate role in prose:
+
+| Stripped | Preserved |
+|---|---|
+| U+E0000–E007F tag chars · U+202A–202E, U+2066–2069 bidi · U+200B, U+2060, U+FEFF, U+180E, U+00AD | U+200C ZWNJ · U+200D ZWJ · U+FE00–FE0F variation selectors |
+
+ZWJ/ZWNJ are orthographic in Arabic/Indic and structural in emoji sequences, so they survive
+— **except between two ASCII characters**, where they can be neither. Both directions are
+asserted in the tests; breaking that distinction silently corrupts real content.
+
+Stripping is **reported to stderr**, never silent. Finding these characters is itself signal
+that the page is hostile.
+
+## Known gap: `web-x:crawl` still carries the crawl4ai leak
+
+`web-crawl.py` still uses crawl4ai, which leaks 9 of 9 hidden-HTML vectors, and `/web-x:crawl`
+archives many pages at once. **This is the top open gap in the plugin.**
+
+It is not fixed here because scrapling has no CLI deep crawl — closing it means writing a real
+`SiteToMarkdownSpider`, which is a different piece of work from a subprocess wrapper. Until
+then, treat crawled output as materially less trustworthy than fetched output.
 
 ## YouTube bot-gating (why `web-transcript.py` pins player clients)
 
